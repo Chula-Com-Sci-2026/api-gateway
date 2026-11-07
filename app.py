@@ -16,7 +16,10 @@ app=FastAPI(title="Can't Run Alone Gateway",version="1.0.0")
 setup(app)
 app.add_middleware(CORSMiddleware,allow_origins=os.environ.get("FRONTEND_ORIGINS","http://localhost:5173,http://localhost:5174").split(","),
                    allow_credentials=True,allow_methods=["GET","POST","PUT","PATCH","DELETE","OPTIONS"],allow_headers=["Authorization","Content-Type","X-Correlation-ID"])
-channel=grpc.insecure_channel(os.environ["DISCOVERY_TARGET"])
+# One HTTP/2 channel pins every call to one backend; DISCOVERY_LB_POLICY=round_robin with a
+# dns:/// headless target spreads calls over all resolved Discovery pods. Unset keeps gRPC's default.
+lb_policy=os.environ.get("DISCOVERY_LB_POLICY")
+channel=grpc.insecure_channel(os.environ["DISCOVERY_TARGET"],options=[("grpc.lb_policy_name",lb_policy)] if lb_policy else None)
 discovery=rpc.BuddyDiscoveryServiceStub(channel)
 
 async def proxy(service,path,request):

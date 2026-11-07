@@ -1,26 +1,50 @@
 # API Gateway / BFF
 
-Browser HTTP routing, JWT validation, aggregation and REST-to-gRPC translation. No domain database.
+The browser-facing API for Can't Run Alone. It routes HTTP requests to backend services, validates JWT bearer tokens, aggregates dashboard data, and translates buddy discovery requests from REST to gRPC. The gateway does not require its own database.
 
-Local Deliverable 4 implementation. Separate Git repository; API/event contracts and environment configuration allow a compatible teammate service to replace this one.
+## Run with Docker
 
-## Run
+Install Docker, then run the following commands from this repository's root directory. The image includes Python 3.13, pinned dependencies, and generated gRPC client code.
 
-Python 3.13 and pinned dependencies. Build with `docker build -t cra-gateway .`. The integrated startup and isolated test database provisioning are documented in `../local-integration/README.md`:
+Create a `.env` file with the backend addresses for your environment:
 
-```sh
-cd ../local-integration
-python3 scripts/init-env.py
-docker compose up -d --build
-./scripts/test-services.sh
+```dotenv
+JWT_SECRET=replace-with-the-shared-backend-jwt-secret
+DISCOVERY_TARGET=buddy-discovery:50051
+IDENTITY_URL=http://identity:8000
+PROFILE_URL=http://profile:8000
+SCHEDULING_URL=http://scheduling:8000
+CONDITIONS_URL=http://conditions:8000
+NOTIFICATION_URL=http://notification:8000
+REPUTATION_URL=http://reputation:8000
+FRONTEND_ORIGINS=http://localhost:5173,http://localhost:5174
 ```
 
-The Compose service is `gateway`. It listens on port 8000 inside the private local network. Database: **None**. Every protected route validates its bearer token and performs ownership checks. JWT secret, database credentials and service addresses come from the environment; `.env` is ignored. The gateway publishes only its loopback port to the host.
+These are example service names and ports. Replace them with addresses reachable from the gateway container. `DISCOVERY_TARGET` uses `host:port`; HTTP service URLs include the scheme and omit the `/api/v1` path. Use the same JWT signing secret as the backend services. `FRONTEND_ORIGINS` is a comma-separated list of allowed browser origins. The `.env` file is ignored by Git.
 
-## API and tests
+Build and start the gateway:
 
-FastAPI exposes `/openapi.json` and `/docs`. The exported contract is `../local-integration/contracts/gateway.openapi.json`. `/up` checks database connectivity when PostgreSQL is configured. Run Conditions additionally exposes `/ready` for Redis readiness.
+```sh
+docker build -t cra-gateway .
+docker run --rm --name cra-gateway --env-file .env -p 127.0.0.1:8000:8000 cra-gateway
+```
 
-Tests are in `test_*.py`; run `pytest -q` with this service's test database and required environment variables. PostgreSQL tests require a separately created service-owned `*_test` database and run real SQL migrations automatically. Run Conditions tests require a dedicated Redis database (integration uses database 15). Never point tests at demo/production data. Gateway test stubs are generated in its Docker build from its checked-in `.proto` copy. Full running-stack tests live in `local-integration/scripts/check_flows.py`.
+If the backend services run on a Docker network, add `--network <network-name>` to the `docker run` command so their service names resolve. The gateway starts independently, but requests to backend services require those services to be running and reachable.
 
-Only the scoped delivery operations are implemented. Deferred product features are listed in `../docs/plans/deliverable-4-implementation-plan.md`; they must not be claimed as implemented. OTP uses an explicitly labeled console delivery adapter, not live SMS. Provider fixtures appear only in focused tests and the labeled prepared past run; integrated forecast calls use the live provider.
+Open <http://localhost:8000/docs> for interactive API documentation. Check <http://localhost:8000/up> for gateway health.
+
+## API
+
+The OpenAPI contract is available at `/openapi.json`. Protected routes validate bearer tokens; buddy request operations derive the caller's identity from the token. Backend services enforce their domain authorization rules.
+
+The `/up` endpoint checks gateway health. If the optional `DATABASE_URL` environment variable is set, it also checks that database connection. A database is not needed for normal gateway operation.
+
+## Tests
+
+Build the image as shown above, then run the gateway tests:
+
+```sh
+docker run --rm -e JWT_SECRET=gateway-test-secret-only -e DISCOVERY_TARGET=localhost:50051 cra-gateway pytest -q
+```
+
+The tests use a test-only signing secret and stub discovery calls. They do not require a running backend or database.
