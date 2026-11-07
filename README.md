@@ -17,6 +17,7 @@ SCHEDULING_URL=http://scheduling:8000
 CONDITIONS_URL=http://conditions:8000
 NOTIFICATION_URL=http://notification:8000
 REPUTATION_URL=http://reputation:8000
+TRUST_SAFETY_URL=http://trust-safety:8000
 FRONTEND_ORIGINS=http://localhost:5173,http://localhost:5174
 ```
 

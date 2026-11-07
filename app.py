@@ -28,7 +28,7 @@ async def proxy(service,path,request):
         async with httpx.AsyncClient(timeout=25) as client:
             result=await client.request(request.method,os.environ[service+"_URL"]+path,params=request.query_params,content=await request.body(),headers=headers)
     except httpx.HTTPError:
-        raise HTTPException(503,f"{service.title()} service unavailable")
+        raise HTTPException(503,f"{service.replace('_',' ').title()} service unavailable")
     response=Response(result.content,status_code=result.status_code,media_type=result.headers.get("content-type"))
     for cookie in result.headers.get_list("set-cookie"):
         response.headers.append("set-cookie",cookie)
@@ -118,6 +118,9 @@ async def route(path:str,request:Request,claims=Depends(user)):
         service="REPUTATION"
     elif path=="runs" or path.startswith("runs/"):
         service="SCHEDULING"
+    elif path.startswith(("verification/","reports/","moderation/")):
+        # Moderator permission is decided by Trust & Safety, which owns that rule.
+        service="TRUST_SAFETY"
     else:
         raise HTTPException(404,"Unknown API route")
     return await proxy(service,"/api/v1/"+path,request)
