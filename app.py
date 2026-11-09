@@ -1,4 +1,5 @@
 """Browser BFF; addresses are deployment configuration, never browser-facing service URLs."""
+import asyncio
 import json
 import os
 from uuid import UUID
@@ -90,6 +91,17 @@ def cancel(request_id:UUID,request:Request,claims=Depends(user)):
 def buddies(request:Request,claims=Depends(user)):
     return grpc_call(discovery.ListBuddies,pb.ListBuddiesRequest(),request).get("runnerIds",[])
 
+def suggested_runners(request,limit=3):
+    """Home's strongest matches: Discovery's search with the pace filter on (pace ranges that overlap
+    the caller's own), nearest first, minus runners who are already buddies. Optional on Home, so a
+    Discovery outage or a caller without a profile yields none instead of failing the dashboard."""
+    try:
+        found=json.loads(grpc_call(discovery.SearchRunners,pb.SearchRunnersRequest(radius_km=10,experience="All",pace="match"),request).get("runnersJson","[]"))
+        buddies=set(grpc_call(discovery.ListBuddies,pb.ListBuddiesRequest(),request).get("runnerIds",[]))
+    except HTTPException:
+        return []
+    return [runner for runner in found if runner["id"] not in buddies][:limit]
+
 @app.get("/api/v1/dashboard")
 async def dashboard(request:Request,claims=Depends(user)):
     headers={"Authorization":request.headers["authorization"]}
@@ -101,8 +113,10 @@ async def dashboard(request:Request,claims=Depends(user)):
             for result in (profile,runs,history):
                 if result.status_code!=200:
                     raise HTTPException(result.status_code,"Complete your profile or check service availability")
+        # gRPC calls block, so they run off the event loop.
+        suggested=await asyncio.to_thread(suggested_runners,request)
         return {"greetingName":profile.json()["name"],"weeklyDistanceKm":history.json()["totalDistanceMeters"]/1000,
-                "nextRun":next((run for run in runs.json() if run["status"]=="scheduled"),None),"suggestedRunners":[]}
+                "nextRun":next((run for run in runs.json() if run["status"]=="scheduled"),None),"suggestedRunners":suggested}
     except httpx.HTTPError:
         raise HTTPException(503,"Dashboard service unavailable")
 
