@@ -53,3 +53,24 @@ def test_trust_safety_outage_is_a_readable_503(client,subject,monkeypatch):
     monkeypatch.setenv('TRUST_SAFETY_URL','http://127.0.0.1:9')
     result=client.get('/api/v1/moderation/queue',headers=auth(subject))
     assert result.status_code==503 and result.json()['message']=='Trust Safety service unavailable'
+
+class FakeRequest:
+    headers={'authorization':'Bearer token'}
+
+def test_suggested_runners_are_pace_matches_without_existing_buddies(monkeypatch):
+    seen={}
+    def search(body,**kwargs):
+        seen['pace']=body.pace
+        return pb.SearchRunnersResponse(runners_json='[{"id":"buddy"},{"id":"a"},{"id":"b"},{"id":"c"},{"id":"d"}]')
+    monkeypatch.setattr(module.discovery,'SearchRunners',search)
+    monkeypatch.setattr(module.discovery,'ListBuddies',lambda body,**kwargs:pb.ListBuddiesResponse(runner_ids=['buddy']))
+    assert [runner['id'] for runner in module.suggested_runners(FakeRequest())]==['a','b','c']
+    assert seen['pace']=='match'
+
+def test_suggested_runners_are_empty_when_discovery_fails(monkeypatch):
+    class Unavailable(grpc.RpcError):
+        def code(self): return grpc.StatusCode.UNAVAILABLE
+        def details(self): return 'Profile search unavailable'
+    def search(body,**kwargs): raise Unavailable()
+    monkeypatch.setattr(module.discovery,'SearchRunners',search)
+    assert module.suggested_runners(FakeRequest())==[]
