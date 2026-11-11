@@ -20,6 +20,15 @@ def test_gateway_derives_sender_from_token(client,subject,monkeypatch):
     assert result.status_code==201
     assert seen['sender']==subject
 
+def test_gateway_forwards_the_note_and_returns_it(client,subject,monkeypatch):
+    def send(body,**kwargs):
+        return pb.BuddyRequest(id=str(uuid4()),sender_id=body.sender_id,recipient_id=body.recipient_id,status='pending',note=body.note)
+    monkeypatch.setattr(module.discovery,'SendBuddyRequest',send)
+    result=client.post('/api/v1/buddy-requests',json={'runnerId':str(uuid4()),'note':'Evening 5K this week?'},headers=auth(subject))
+    assert result.status_code==201
+    assert result.json()['note']=='Evening 5K this week?'
+    assert client.post('/api/v1/buddy-requests',json={'runnerId':str(uuid4()),'note':42},headers=auth(subject)).status_code==422
+
 def test_gateway_invalid_recipient(client,subject):
     assert client.post('/api/v1/buddy-requests',json={'runnerId':'invalid'},headers=auth(subject)).status_code==422
 
