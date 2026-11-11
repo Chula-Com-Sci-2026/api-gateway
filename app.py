@@ -75,7 +75,10 @@ async def send(request:Request,claims=Depends(user)):
         recipient=str(UUID(body.get("runnerId","")))
     except (ValueError,TypeError):
         raise HTTPException(422,"Valid runnerId required")
-    return grpc_call(discovery.SendBuddyRequest,pb.SendBuddyRequestRequest(sender_id=claims["sub"],recipient_id=recipient),request)
+    note=body.get("note") or ""
+    if not isinstance(note,str):
+        raise HTTPException(422,"note must be text")
+    return grpc_call(discovery.SendBuddyRequest,pb.SendBuddyRequestRequest(sender_id=claims["sub"],recipient_id=recipient,note=note),request)
 
 @app.patch("/api/v1/buddy-requests/{request_id}")
 async def respond(request_id:UUID,request:Request,claims=Depends(user)):
