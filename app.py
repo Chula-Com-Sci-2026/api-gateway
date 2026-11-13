@@ -20,7 +20,12 @@ app.add_middleware(CORSMiddleware,allow_origins=os.environ.get("FRONTEND_ORIGINS
 # One HTTP/2 channel pins every call to one backend; DISCOVERY_LB_POLICY=round_robin with a
 # dns:/// headless target spreads calls over all resolved Discovery pods. Unset keeps gRPC's default.
 lb_policy=os.environ.get("DISCOVERY_LB_POLICY")
-channel=grpc.insecure_channel(os.environ["DISCOVERY_TARGET"],options=[("grpc.lb_policy_name",lb_policy)] if lb_policy else None)
+# Discovery closes connections after GRPC_MAX_CONNECTION_AGE_MS; a call started just as one closes
+# fails UNAVAILABLE. Read-only calls are safe to repeat, so they retry; writes never do.
+read_methods=[{"service":"buddy_discovery.v1.BuddyDiscoveryService","method":name} for name in ("SearchRunners","ListBuddies","ListBuddyRequests","GetBuddyRequest")]
+service_config={**({"loadBalancingConfig":[{lb_policy:{}}]} if lb_policy else {}),"methodConfig":[{"name":read_methods,
+  "retryPolicy":{"maxAttempts":3,"initialBackoff":"0.05s","maxBackoff":"0.5s","backoffMultiplier":2,"retryableStatusCodes":["UNAVAILABLE"]}}]}
+channel=grpc.insecure_channel(os.environ["DISCOVERY_TARGET"],options=[("grpc.enable_retries",1),("grpc.service_config",json.dumps(service_config))])
 discovery=rpc.BuddyDiscoveryServiceStub(channel)
 
 async def proxy(service,path,request):
