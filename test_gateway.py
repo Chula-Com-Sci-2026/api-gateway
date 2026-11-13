@@ -9,7 +9,13 @@ def test_protected_routes_require_token(client):
     assert client.get('/api/v1/runs').status_code==401
     assert client.get('/api/v1/buddy-requests').status_code==401
 
-def test_gateway_derives_sender_from_token(client,subject,monkeypatch):
+@pytest.fixture
+def no_links(monkeypatch):
+    """Discovery reports no buddies and no requests, so a new request is allowed through."""
+    monkeypatch.setattr(module.discovery,'ListBuddies',lambda body,**kwargs:pb.ListBuddiesResponse())
+    monkeypatch.setattr(module.discovery,'ListBuddyRequests',lambda body,**kwargs:pb.ListBuddyRequestsResponse())
+
+def test_gateway_derives_sender_from_token(client,subject,monkeypatch,no_links):
     seen={}
     def send(body,**kwargs):
         seen['sender']=body.sender_id
@@ -20,7 +26,7 @@ def test_gateway_derives_sender_from_token(client,subject,monkeypatch):
     assert result.status_code==201
     assert seen['sender']==subject
 
-def test_gateway_forwards_the_note_and_returns_it(client,subject,monkeypatch):
+def test_gateway_forwards_the_note_and_returns_it(client,subject,monkeypatch,no_links):
     def send(body,**kwargs):
         return pb.BuddyRequest(id=str(uuid4()),sender_id=body.sender_id,recipient_id=body.recipient_id,status='pending',note=body.note)
     monkeypatch.setattr(module.discovery,'SendBuddyRequest',send)
@@ -28,6 +34,37 @@ def test_gateway_forwards_the_note_and_returns_it(client,subject,monkeypatch):
     assert result.status_code==201
     assert result.json()['note']=='Evening 5K this week?'
     assert client.post('/api/v1/buddy-requests',json={'runnerId':str(uuid4()),'note':42},headers=auth(subject)).status_code==422
+
+def refuse_send(body,**kwargs):
+    raise AssertionError('Discovery must not be asked to send a duplicate request')
+
+def test_gateway_refuses_a_request_to_an_existing_buddy(client,subject,monkeypatch):
+    buddy=str(uuid4())
+    monkeypatch.setattr(module.discovery,'ListBuddies',lambda body,**kwargs:pb.ListBuddiesResponse(runner_ids=[buddy]))
+    monkeypatch.setattr(module.discovery,'SendBuddyRequest',refuse_send)
+    result=client.post('/api/v1/buddy-requests',json={'runnerId':buddy},headers=auth(subject))
+    assert result.status_code==409 and result.json()['message']=='You are already running buddies'
+
+@pytest.mark.parametrize('incoming',[False,True])
+def test_gateway_refuses_while_a_request_either_way_is_pending(client,subject,monkeypatch,incoming):
+    other=str(uuid4())
+    sender,recipient=(other,subject) if incoming else (subject,other)
+    monkeypatch.setattr(module.discovery,'ListBuddies',lambda body,**kwargs:pb.ListBuddiesResponse())
+    monkeypatch.setattr(module.discovery,'ListBuddyRequests',lambda body,**kwargs:pb.ListBuddyRequestsResponse(
+        buddy_requests=[pb.BuddyRequest(id=str(uuid4()),sender_id=sender,recipient_id=recipient,status='pending')]))
+    monkeypatch.setattr(module.discovery,'SendBuddyRequest',refuse_send)
+    assert client.post('/api/v1/buddy-requests',json={'runnerId':other},headers=auth(subject)).status_code==409
+
+def test_gateway_allows_a_new_request_after_a_decline(client,subject,monkeypatch):
+    other=str(uuid4())
+    monkeypatch.setattr(module.discovery,'ListBuddies',lambda body,**kwargs:pb.ListBuddiesResponse())
+    monkeypatch.setattr(module.discovery,'ListBuddyRequests',lambda body,**kwargs:pb.ListBuddyRequestsResponse(
+        buddy_requests=[pb.BuddyRequest(id=str(uuid4()),sender_id=subject,recipient_id=other,status='rejected')]))
+    monkeypatch.setattr(module.discovery,'SendBuddyRequest',lambda body,**kwargs:pb.BuddyRequest(id=str(uuid4()),sender_id=subject,recipient_id=other,status='pending'))
+    assert client.post('/api/v1/buddy-requests',json={'runnerId':other},headers=auth(subject)).status_code==201
+
+def test_gateway_refuses_a_request_to_yourself(client,subject):
+    assert client.post('/api/v1/buddy-requests',json={'runnerId':subject},headers=auth(subject)).status_code==422
 
 def test_gateway_invalid_recipient(client,subject):
     assert client.post('/api/v1/buddy-requests',json={'runnerId':'invalid'},headers=auth(subject)).status_code==422

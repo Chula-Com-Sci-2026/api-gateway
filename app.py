@@ -68,6 +68,16 @@ def requests(request:Request,claims=Depends(user)):
     result=grpc_call(discovery.ListBuddyRequests,pb.ListBuddyRequestsRequest(runner_id=claims["sub"]),request)
     return result.get("buddyRequests",[])
 
+def already_linked(sender,recipient,request):
+    """Discovery refuses a duplicate only while the first request is pending in the same direction, so
+    after an accept the same pair could keep sending requests. Refuse here when the two runners are
+    already buddies or a request between them, either way round, is still waiting for an answer."""
+    if recipient in grpc_call(discovery.ListBuddies,pb.ListBuddiesRequest(),request).get("runnerIds",[]):
+        raise HTTPException(409,"You are already running buddies")
+    for item in grpc_call(discovery.ListBuddyRequests,pb.ListBuddyRequestsRequest(runner_id=sender),request).get("buddyRequests",[]):
+        if {item.get("senderId"),item.get("recipientId")}=={sender,recipient} and item.get("status") in ("pending","accepted"):
+            raise HTTPException(409,"You are already running buddies" if item["status"]=="accepted" else "A buddy request between you is already waiting for an answer")
+
 @app.post("/api/v1/buddy-requests",status_code=201)
 async def send(request:Request,claims=Depends(user)):
     body=await request.json()
@@ -78,6 +88,9 @@ async def send(request:Request,claims=Depends(user)):
     note=body.get("note") or ""
     if not isinstance(note,str):
         raise HTTPException(422,"note must be text")
+    if recipient==claims["sub"]:
+        raise HTTPException(422,"You cannot send a buddy request to yourself")
+    already_linked(claims["sub"],recipient,request)
     return grpc_call(discovery.SendBuddyRequest,pb.SendBuddyRequestRequest(sender_id=claims["sub"],recipient_id=recipient,note=note),request)
 
 @app.patch("/api/v1/buddy-requests/{request_id}")
