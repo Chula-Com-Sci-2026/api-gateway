@@ -2,6 +2,7 @@
 import asyncio
 import json
 import os
+from datetime import datetime,timezone
 from uuid import UUID
 import grpc
 import httpx
@@ -123,6 +124,12 @@ def suggested_runners(request,limit=3):
         return []
     return [runner for runner in found if runner["id"] not in buddies][:limit]
 
+def next_run(runs,now):
+    """The soonest run the caller has joined that has not ended. Scheduling lists runs by start time and
+    keeps a finished run "scheduled" until attendance is confirmed, so status alone is not enough."""
+    return next((run for run in runs if run.get("joined") and run["status"]=="scheduled"
+                 and datetime.fromisoformat(run["endsAt"])>now),None)
+
 @app.get("/api/v1/dashboard")
 async def dashboard(request:Request,claims=Depends(user)):
     headers={"Authorization":request.headers["authorization"]}
@@ -137,7 +144,7 @@ async def dashboard(request:Request,claims=Depends(user)):
         # gRPC calls block, so they run off the event loop.
         suggested=await asyncio.to_thread(suggested_runners,request)
         return {"greetingName":profile.json()["name"],"weeklyDistanceKm":history.json()["totalDistanceMeters"]/1000,
-                "nextRun":next((run for run in runs.json() if run["status"]=="scheduled"),None),"suggestedRunners":suggested}
+                "nextRun":next_run(runs.json(),datetime.now(timezone.utc)),"suggestedRunners":suggested}
     except httpx.HTTPError:
         raise HTTPException(503,"Dashboard service unavailable")
 

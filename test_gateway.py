@@ -5,6 +5,14 @@ from conftest import auth
 import app as module
 import buddy_discovery_pb2 as pb
 
+def test_next_run_is_the_soonest_joined_run_that_has_not_ended():
+    now=module.datetime(2026,11,15,3,0,tzinfo=module.timezone.utc)
+    run=lambda id,ends,joined=True,status='scheduled':{'id':id,'endsAt':ends,'joined':joined,'status':status}
+    runs=[run('ended-yesterday','2026-11-14T12:00:00+00:00'),run('not-joined','2026-11-15T12:00:00Z',joined=False),
+          run('completed','2026-11-15T13:00:00+00:00',status='completed'),run('next','2026-11-16T00:00:00+00:00'),run('later','2026-11-18T00:00:00+00:00')]
+    assert module.next_run(runs,now)['id']=='next'
+    assert module.next_run(runs[:3],now) is None
+
 def test_protected_routes_require_token(client):
     assert client.get('/api/v1/runs').status_code==401
     assert client.get('/api/v1/buddy-requests').status_code==401
