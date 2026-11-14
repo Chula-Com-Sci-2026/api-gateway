@@ -144,13 +144,13 @@ async def dashboard(request:Request,claims=Depends(user)):
 @app.api_route("/api/v1/{path:path}",methods=["GET","POST","PUT","PATCH","DELETE"])
 async def route(path:str,request:Request,claims=Depends(user)):
     # Profile also owns visibility and photo routes under me/profile/ (running-buddy-contracts profile.openapi.json).
-    if path=="me/profile" or path.startswith("me/profile/") or path.startswith("runners/") and not path.endswith("rating-summary"):
+    if path=="me/profile" or path.startswith("me/profile/") or path.startswith("runners/") and not path.endswith(("/rating-summary","/running-summary")):
         service="PROFILE"
     elif path=="conditions":
         service="CONDITIONS"
     elif path=="notifications" or path.startswith("notifications/"):
         service="NOTIFICATION"
-    elif path=="running_records" or path.startswith("running_records/") or path=="me/history" or path.endswith(("/attendance","/ratings","/rating-summary")):
+    elif path=="running_records" or path.startswith("running_records/") or path=="me/history" or path.endswith(("/attendance","/ratings","/rating-summary","/running-summary")):
         service="REPUTATION"
     elif path=="runs" or path.startswith("runs/"):
         service="SCHEDULING"

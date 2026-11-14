@@ -80,6 +80,16 @@ def test_trust_safety_routes_reach_their_service(client,subject,monkeypatch,meth
     assert getattr(client,method)('/api/v1/'+path,headers=auth(subject)).status_code==200
     assert seen=={'service':'TRUST_SAFETY','target':'/api/v1/'+path}
 
+@pytest.mark.parametrize('path',['runners/'+str(uuid4())+'/rating-summary','runners/'+str(uuid4())+'/running-summary','me/history'])
+def test_reputation_reads_reach_their_service(client,subject,monkeypatch,path):
+    seen={}
+    async def proxy(service,target,request):
+        seen.update(service=service,target=target)
+        return module.Response(status_code=200)
+    monkeypatch.setattr(module,'proxy',proxy)
+    assert client.get('/api/v1/'+path,headers=auth(subject)).status_code==200
+    assert seen=={'service':'REPUTATION','target':'/api/v1/'+path}
+
 @pytest.mark.parametrize('method,path',[('get','me/profile'),('put','me/profile/visibility'),('post','me/profile/photo-uploads'),
   ('put','me/profile/photo'),('delete','me/profile/photo'),('get','runners/'+str(uuid4()))])
 def test_profile_routes_reach_their_service(client,subject,monkeypatch,method,path):
