@@ -38,6 +38,8 @@ Open <http://localhost:8000/docs> for interactive API documentation. Check <http
 
 The OpenAPI contract is available at `/openapi.json`. Protected routes validate bearer tokens; buddy request operations derive the caller's identity from the token. Backend services enforce their domain authorization rules.
 
+Before forwarding `POST /api/v1/buddy-requests`, the gateway checks Discovery's buddy list and the caller's requests. It returns `409` when the two runners are already buddies or a request between them (either direction) is still pending, and `422` for a request to yourself. Discovery itself only rejects a duplicate pending request in the same direction.
+
 The `/up` endpoint checks gateway health. If the optional `DATABASE_URL` environment variable is set, it also checks that database connection. A database is not needed for normal gateway operation.
 
 ## Tests
